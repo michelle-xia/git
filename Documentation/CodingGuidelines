@@ -621,6 +621,11 @@ For C programs:
     - `S_free()` releases a structure's contents and frees the
       structure.
 
+ - Function names should be self-explanatory, clearly reflecting their
+   purpose or behavior. To maintain clarity and avoid confusion,
+   arbitrary suffixes such as _1 are discouraged, as they provide no
+   meaningful insight into the function's role.
+
 For Perl programs:
 
  - Most of the C guidelines above apply.
