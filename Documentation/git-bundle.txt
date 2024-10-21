@@ -26,6 +26,9 @@ They can be used to create both incremental and full backups of a
 repository, and to relay the state of the references in one repository
 to another.
 
+You can use `git bundle create <file> --all` to create a full backup of
+your repository.
+
 Git commands that fetch or otherwise "read" via protocols such as
 `ssh://` and `https://` can also operate on bundle files. It is
 possible linkgit:git-clone[1] a new repository from a bundle, to use
@@ -132,7 +135,7 @@ SPECIFYING REFERENCES
 ---------------------
 
 Revisions must be accompanied by reference names to be packaged in a
-bundle.
+bundle.  Alternatively `--all` can be used to package all refs.
 
 More than one reference may be packaged, and more than one set of prerequisite objects can
 be specified.  The objects packaged are those not contained in the
@@ -320,6 +323,20 @@ You can also see what references it offers:
 ----------------
 $ git ls-remote mybundle
 ----------------
+
+DISCUSSION
+----------
+
+A naive way to make a full backup of a repository is to use something to
+the effect of `cp -a <repo> <destination>`.  This is discouraged since
+the repository could be written to during the copy operation.  In turn
+some files at `<destination>` could be corrupted.
+
+This is why it is recommended to use Git tooling for making repository
+backups, either with this command or with e.g. linkgit:git-clone[1].
+
+See also linkgit:gitfaq[1], section "TRANSFERS" for a discussion of the
+problems associated with file syncing across systems.
 
 FILE FORMAT
 -----------
