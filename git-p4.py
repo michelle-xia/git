@@ -3888,10 +3888,21 @@ class P4Sync(Command, P4UserMap):
                         parent = ""
                         isMergeCommit = False
                         isBranchCommit = False
+                        
                         if description['action0'] == "integrate": isMergeCommit = True
                         if description['action0'] == "branch": isBranchCommit = True
-
+                        
                         filesForCommit = branches[branch]
+
+                        # Perforce takes the most common action and assigns it to action0
+                        # New files being merged in will be marked as "branch"
+                        # This double checks if the change is actually a merge being marked as a branch
+                        if isMergeCommit is False:
+                            for file in filesForCommit:
+                                if file['action'] == "integrate":
+                                    isMergeCommit = True
+                                    isBranchCommit = False
+                                    break
 
                         if self.verbose:
                             print("branch is %s" % branch)
