@@ -2984,7 +2984,7 @@ class P4Sync(Command, P4UserMap):
         self.gitStream.flush()
         out = self.gitOutput.readline()
         if self.verbose:
-            print("checkpoint finished: " + out)
+            print("checkpoint finished: " , out)
 
     def isPathWanted(self, path):
         for p in self.cloneExclude:
@@ -3445,7 +3445,7 @@ class P4Sync(Command, P4UserMap):
                     'rev': record['headRev'],
                     'type': record['headType']})
 
-    def commit(self, details, files, branch, parent="", allow_empty=False):
+    def commit(self, details, files, branch, parent="", allow_empty=False, branchAncestor= "", merge=False):
         epoch = details["time"]
         author = details["user"]
         jobs = self.extractJobsFromCommit(details)
@@ -3494,10 +3494,18 @@ class P4Sync(Command, P4UserMap):
 
         self.gitStream.write("EOT\n\n")
 
-        if len(parent) > 0:
+
+        if len(parent) > 0 and len(branchAncestor) > 0:
             if self.verbose:
-                print("parent %s" % parent)
-            self.gitStream.write("from %s\n" % parent)
+                print("ancestor of the branch we are merging in to %s" % branchAncestor)
+                self.gitStream.write("from %s\n" % branchAncestor)
+                print("merge parent %s" % parent)
+                self.gitStream.write("merge %s\n" % parent)
+        else:
+            if len(parent) > 0:
+                if self.verbose:
+                    print("parent %s" % parent)
+                self.gitStream.write("from %s\n" % parent)
 
         self.streamP4Files(files)
         self.gitStream.write("\n")
@@ -3647,7 +3655,7 @@ class P4Sync(Command, P4UserMap):
     def getBranchMapping(self):
         lostAndFoundBranches = set()
 
-        user = gitConfig("git-p4.branchUser")
+        user = "mxia"
 
         for info in p4CmdList(
             ["branches"] + (["-u", user] if len(user) > 0 else [])):
@@ -3788,12 +3796,24 @@ class P4Sync(Command, P4UserMap):
 
         self.importChanges(changes)
         return True
+    
+    def searchBranchAncestorCommit(self, path):
+        try:
+            commit_list = read_pipe_lines(["git", "rev-list", "--format=%H %T", path])
+            if len(commit_list) >= 2:
+                branchAncestorCommit = commit_list[1].split()[0].strip("\n")
+                return branchAncestorCommit
+        except:
+            pass
+        return None
 
     def searchParent(self, parent, branch, target):
         targetTree = read_pipe(["git", "rev-parse",
-                                "{}^{{tree}}".format(target)]).strip()
-        for line in read_pipe_lines(["git", "rev-list", "--format=%H %T",
-                                     "--no-merges", parent]):
+                                    "{}^{{tree}}".format(target)]).strip()
+        # no merges ignores the commits that are merges!!
+        # The logic here does not look for the from keyword for git fast-import merge
+        
+        for line in read_pipe_lines(["git", "rev-list", "--format=%H %T", parent]):
             if line.startswith("commit "):
                 continue
             commit, tree = line.strip().split(" ")
@@ -3801,6 +3821,48 @@ class P4Sync(Command, P4UserMap):
                 if self.verbose:
                     print("Found parent of %s in commit %s" % (branch, commit))
                 return commit
+        return None
+    
+    def parseP4CMergeDescription(self, description, curBranch):
+        # b'Branching\n\n//testGitMerge/main/...\n\nto //testGitMerge/branches/foo/...'
+        # Merging //epicenter/sov-import/branches/summit_compatability/... to //epicenter/sov-import/main/...
+        pattern = r"(\/\/)([^...]*)(\/...)"
+        branchPattern = r"(branches/)([^\/]*)"
+        match = re.findall(pattern, description)
+        for result in match:
+            branch = result[1]
+            if "main" in branch:
+                branch = "main"
+            else:
+                match = re.search(branchPattern, result[1])
+                if match:
+                    branch = match.group(0)
+                else:
+                    return None
+            branch = self.gitRefForBranch(branch)
+            if branch != curBranch:
+                return branch
+        return None
+    
+    def writeFailedMergeParse(self, change, desc, branch):
+        with open('FailedMergeWrites.txt', 'a') as f:
+            lineToWrite = "change " + str(change) + " " + desc + " on branch " + branch + "\n"
+            f.write(lineToWrite)
+
+    def searchMergeParent(self, branch):
+
+        # no merges ignores the commits that are merges!!
+        # The logic here does not look for the from keyword for git fast-import merge
+        print("searching for merge parent commit on branch", branch)
+        try:
+            commit_list = read_pipe_lines(["git", "rev-list", branch])
+        except:
+            return None
+
+        if len(commit_list) >= 1:
+            parent = commit_list[0].strip()
+            print("Found parent of %s in commit %s" % (branch, parent))
+            return parent
         return None
 
     def importChanges(self, changes, origin_revision=0):
@@ -3824,6 +3886,10 @@ class P4Sync(Command, P4UserMap):
                         self.branchPrefixes = [branchPrefix]
 
                         parent = ""
+                        isMergeCommit = False
+                        isBranchCommit = False
+                        if description['action0'] == "integrate": isMergeCommit = True
+                        if description['action0'] == "branch": isBranchCommit = True
 
                         filesForCommit = branches[branch]
 
@@ -3837,12 +3903,15 @@ class P4Sync(Command, P4UserMap):
                             parent = self.knownBranches[branch]
                             if parent == branch:
                                 parent = ""
+                            # parent is not the same as the branch (ie a merge or a new branch)
                             else:
                                 fullBranch = self.projectName + branch
+                                # if branch is not already created (this needs to be changed for merges)
                                 if fullBranch not in self.p4BranchesInGit:
                                     if not self.silent:
                                         print("\n    Importing new branch %s" % fullBranch)
                                     if self.importNewBranch(branch, change - 1):
+                                        # reset parent and add branch to git branches
                                         parent = ""
                                         self.p4BranchesInGit.append(fullBranch)
                                     if not self.silent:
@@ -3851,18 +3920,50 @@ class P4Sync(Command, P4UserMap):
                                 if self.verbose:
                                     print("parent determined through known branches: %s" % parent)
 
+                        # get full perforce names for branches with //depot/
                         branch = self.gitRefForBranch(branch)
                         parent = self.gitRefForBranch(parent)
 
                         if self.verbose:
                             print("looking for initial parent for %s; current parent is %s" % (branch, parent))
-
+                        # no parent found and initial parents contains info on the initial parent, find parent
                         if len(parent) == 0 and branch in self.initialParents:
                             parent = self.initialParents[branch]
                             del self.initialParents[branch]
 
                         blob = None
-                        if len(parent) > 0:
+                        branchAncestorCommit = None
+                        
+                        if isMergeCommit:
+                            self.checkpoint()
+                            desc = description['desc'].decode('utf-8')
+                            mergeFromBranch = self.parseP4CMergeDescription(desc, branch)
+                            if mergeFromBranch is None:
+                                self.writeFailedMergeParse(change, desc, branch)
+                                continue
+                            parent = self.searchMergeParent(mergeFromBranch)
+                            if parent is None:
+                                self.writeFailedMergeParse(change, desc, branch)
+                                continue
+                            branchAncestorCommit = self.searchBranchAncestorCommit(branch)
+                        elif isBranchCommit:
+                            tempBranch = "%s/%d" % (self.tempBranchLocation, change)
+                            if self.verbose:
+                                print("Creating temporary branch: " + tempBranch)
+                            self.commit(description, filesForCommit, tempBranch)
+                            self.tempBranches.append(tempBranch)
+                            self.checkpoint()
+                            desc = description['desc'].decode('utf-8')
+                            mergeFromBranch = self.parseP4CMergeDescription(desc, branch)
+                            if mergeFromBranch is None:
+                                self.writeFailedMergeParse(change, desc, branch)
+                                continue
+                            blob = self.searchMergeParent(mergeFromBranch)
+                            if blob is None:
+                                self.writeFailedMergeParse(change, desc, branch)
+                                continue
+                        # we have a current parent
+                        elif len(parent) > 0:
                             tempBranch = "%s/%d" % (self.tempBranchLocation, change)
                             if self.verbose:
                                 print("Creating temporary branch: " + tempBranch)
@@ -3870,7 +3971,9 @@ class P4Sync(Command, P4UserMap):
                             self.tempBranches.append(tempBranch)
                             self.checkpoint()
                             blob = self.searchParent(parent, branch, tempBranch)
-                        if blob:
+                        if len(parent) > 0 and isMergeCommit and branchAncestorCommit:
+                            self.commit(description, filesForCommit, branch, parent=parent, branchAncestor=branchAncestorCommit)
+                        elif blob:
                             self.commit(description, filesForCommit, branch, blob)
                         else:
                             if self.verbose:
