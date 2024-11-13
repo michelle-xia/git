@@ -3958,11 +3958,15 @@ class P4Sync(Command, P4UserMap):
                             mergeFromBranch = self.parseP4CMergeDescription(desc, branch)
                             if mergeFromBranch is None:
                                 self.writeFailedMergeParse(change, desc, branch)
-                                continue
+                                if self.verbose:
+                                    print("Parent of %s not found. Committing into head of %s" % (branch, parent))
+                                self.commit(description, filesForCommit, branch, parent)
                             parent = self.searchMergeParent(mergeFromBranch)
                             if parent is None:
                                 self.writeFailedMergeParse(change, desc, branch)
-                                continue
+                                if self.verbose:
+                                    print("Parent of %s not found. Committing into head of %s" % (branch, parent))
+                                self.commit(description, filesForCommit, branch, parent)
                             branchAncestorCommit = self.searchBranchAncestorCommit(branch)
                         elif isBranchCommit:
                             tempBranch = "%s/%d" % (self.tempBranchLocation, change)
@@ -3975,7 +3979,9 @@ class P4Sync(Command, P4UserMap):
                             mergeFromBranch = self.parseP4CMergeDescription(desc, branch)
                             if mergeFromBranch is None:
                                 self.writeFailedMergeParse(change, desc, branch)
-                                continue
+                                if self.verbose:
+                                    print("Parent of %s not found. Committing into head of %s" % (branch, parent))
+                                self.commit(description, filesForCommit, branch, parent)
                             blob = self.searchMergeParent(mergeFromBranch)
                             if blob is None:
                                 self.writeFailedMergeParse(change, desc, branch)
