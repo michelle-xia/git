@@ -3744,34 +3744,35 @@ class P4Sync(Command, P4UserMap):
 
         earliestCommit = ""
         latestCommit = parseRevision(ref)
-
-        while True:
-            if self.verbose:
-                print("trying: earliest %s latest %s" % (earliestCommit, latestCommit))
-            next = read_pipe(["git", "rev-list", "--bisect",
-                latestCommit, earliestCommit]).strip()
-            if len(next) == 0:
+        try:
+            while True:
                 if self.verbose:
-                    print("argh")
-                return ""
-            log = extractLogMessageFromGitCommit(next)
-            settings = extractSettingsGitLog(log)
-            currentChange = int(settings['change'])
-            if self.verbose:
-                print("current change %s" % currentChange)
-
-            if currentChange == change:
+                    print("trying: earliest %s latest %s" % (earliestCommit, latestCommit))
+                next = read_pipe(["git", "rev-list", "--bisect",
+                    latestCommit, earliestCommit]).strip()
+                if len(next) == 0:
+                    if self.verbose:
+                        print("argh")
+                    return ""
+                log = extractLogMessageFromGitCommit(next)
+                settings = extractSettingsGitLog(log)
+                currentChange = int(settings['change'])
                 if self.verbose:
-                    print("found %s" % next)
-                return next
+                    print("current change %s" % currentChange)
 
-            if currentChange < change:
-                earliestCommit = "^%s" % next
-            else:
-                if next == latestCommit:
-                    die("Infinite loop while looking in ref %s for change %s. Check your branch mappings" % (ref, change))
-                latestCommit = "%s^@" % next
+                if currentChange == change:
+                    if self.verbose:
+                        print("found %s" % next)
+                    return next
 
+                if currentChange < change:
+                    earliestCommit = "^%s" % next
+                else:
+                    if next == latestCommit:
+                        die("Infinite loop while looking in ref %s for change %s. Check your branch mappings" % (ref, change))
+                    latestCommit = "%s^@" % next
+        except:
+            pass
         return ""
 
     def importNewBranch(self, branch, maxChange):
@@ -3808,19 +3809,25 @@ class P4Sync(Command, P4UserMap):
         return None
 
     def searchParent(self, parent, branch, target):
-        targetTree = read_pipe(["git", "rev-parse",
+        try:
+            targetTree = read_pipe(["git", "rev-parse",
                                     "{}^{{tree}}".format(target)]).strip()
+            
+        except:
+            pass
         # no merges ignores the commits that are merges!!
         # The logic here does not look for the from keyword for git fast-import merge
-        
-        for line in read_pipe_lines(["git", "rev-list", "--format=%H %T", parent]):
-            if line.startswith("commit "):
-                continue
-            commit, tree = line.strip().split(" ")
-            if tree == targetTree:
-                if self.verbose:
-                    print("Found parent of %s in commit %s" % (branch, commit))
-                return commit
+        try:
+            for line in read_pipe_lines(["git", "rev-list", "--format=%H %T", parent]):
+                if line.startswith("commit "):
+                    continue
+                commit, tree = line.strip().split(" ")
+                if tree == targetTree:
+                    if self.verbose:
+                        print("Found parent of %s in commit %s" % (branch, commit))
+                    return commit
+        except:
+            pass
         return None
     
     def parseP4CMergeDescription(self, description, curBranch):
@@ -3890,7 +3897,7 @@ class P4Sync(Command, P4UserMap):
                         isBranchCommit = False
                         
                         if description['action0'] == "integrate": isMergeCommit = True
-                        if description['action0'] == "branch": isBranchCommit = True
+                        elif description['action0'] == "branch": isBranchCommit = True
                         
                         filesForCommit = branches[branch]
 
@@ -4130,7 +4137,7 @@ class P4Sync(Command, P4UserMap):
                     sys.stdout.write("\n")
 
     def openStreams(self):
-        self.importProcess = subprocess.Popen(["git", "fast-import"],
+        self.importProcess = subprocess.Popen(["git", "fast-import", "--force"],
                                               stdin=subprocess.PIPE,
                                               stdout=subprocess.PIPE,
                                               stderr=subprocess.PIPE)
