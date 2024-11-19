@@ -3834,7 +3834,7 @@ class P4Sync(Command, P4UserMap):
         # b'Branching\n\n//testGitMerge/main/...\n\nto //testGitMerge/branches/foo/...'
         # Merging //epicenter/sov-import/branches/summit_compatability/... to //epicenter/sov-import/main/...
         pattern = r"(\/\/)([^...]*)(\/...)"
-        branchPattern = r"(branches/)([^\/]*)"
+        branchPattern = r"(branches/)([^.]*)"
         match = re.findall(pattern, description)
         for result in match:
             branch = result[1]
@@ -3843,7 +3843,8 @@ class P4Sync(Command, P4UserMap):
             else:
                 match = re.search(branchPattern, result[1])
                 if match:
-                    branch = match.group(0)
+                    branch = match.group(0).rstrip("/")
+                    
                 else:
                     return None
             branch = self.gitRefForBranch(branch)
