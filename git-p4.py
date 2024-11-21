@@ -4138,7 +4138,7 @@ class P4Sync(Command, P4UserMap):
                     sys.stdout.write("\n")
 
     def openStreams(self):
-        self.importProcess = subprocess.Popen(["git", "fast-import"],
+        self.importProcess = subprocess.Popen(["git", "fast-import", "<", "import_file.txt"],
                                               stdin=subprocess.PIPE,
                                               stdout=subprocess.PIPE,
                                               stderr=subprocess.PIPE)
